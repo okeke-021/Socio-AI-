@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Socio.AI</title>
+</head>
+<body>
+    <h1>Social Confidence Practice</h1>
+    <div id="description">
+        <p><strong>Socio.AI:</strong> Your AI Companion for Building Social Confidence. Immerse yourself in personalized, multimodal interactions using open-source AI models to generate realistic 4D videos and audio scenarios. Chat with an interactive coach that suggests tailored exercises (e.g., "How's your day? Let's explore a calming Atlantic iceberg"), tracks your progress, predicts behaviors, and creates custom lessons to enhance communication and empathy. Improve relationships by practicing in a safe space—boost confidence for networking, dating, or friendships. Start with a 3-day free trial!</p>
+        <div id="social-links">
+            <p>Join the community:</p>
+            <a href="https://t.me/+I-mBeecMexhkZjk0" target="_blank">Telegram</a> | 
+            <a href="https://x.com/GOkeke64862?t=07kTpG8nMRqF5hoIk6UxFg&s=09" target="_blank">Twitter</a>
+        </div>
+    </div>
+    <input type="email" id="emailInput" placeholder="Enter email for magic link">
+    <button id="sendLinkBtn">Send Magic Link</button>
+    <button id="logoutBtn" style="display:none;">Logout</button>
+    <button id="subscribeBtn" style="display:none;">Subscribe ($120/mo)</button>
+    <div id="dashboard" style="display:none;">
+        <h2>Dashboard</h2>
+        <input type="text" id="textInput" placeholder="Chat with AI coach">
+        <input type="file" id="audioUpload" accept="audio/*">
+        <button id="recordBtn">Record</button>
+        <button id="submitBtn" disabled>Send</button>
+        <div id="history"></div>
+        <video id="videoPlayer" controls></video>
+        <audio id="ttsPlayer" controls></audio>
+        <div id="feedback"></div>
+        <div id="videosList"></div>
+    </div>
+    <div id="status"></div>
+
+    <script>
+        let jwtToken = localStorage.getItem('jwt');
+        const backendUrl = '/api';  // Relative for same-origin on Koyeb
+
+        document.getElementById('sendLinkBtn').onclick = () => {
+            const email = document.getElementById('emailInput').value;
+            fetch(`${backendUrl}/send-magic-link`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email})
+            }).then(res => res.json()).then(data => {
+                document.getElementById('status').innerText = 'Check your email!';
+            });
+        };
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('token')) {
+            const token = urlParams.get('token');
+            fetch(`${backendUrl}/verify?token=${token}`)
+                .then(res => res.json())
+                .then(data => {
+                    localStorage.setItem('jwt', data.access_token);
+                    jwtToken = data.access_token;
+                    showDashboard(data.user);
+                });
+        }
+
+        function showDashboard(user) {
+            document.getElementById('dashboard').style.display = 'block';
+            document.getElementById('status').innerText = `Welcome, ${user.email}! ${user.trial_active ? 'Trial Active' : user.is_subscribed ? 'Subscribed' : 'Subscribe Now'}`;
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('logoutBtn').style.display = 'block';
+            document.getElementById('subscribeBtn').style.display = user.is_subscribed ? 'none' : 'block';
+            loadVideos();
+        }
+
+        function loadVideos() {
+            fetch(`${backendUrl}/videos`, {headers: {Authorization: `Bearer ${jwtToken}`}})
+                .then(res => res.json())
+                .then(videos => {
+                    const list = document.getElementById('videosList');
+                    list.innerHTML = videos.map(v => `<video src="${backendUrl}/videos/${v.path.split('/').pop()}" controls width="300"></video> ${v.desc}`).join('<br>');
+                });
+        }
+
+        document.getElementById('logoutBtn').onclick = () => {
+            localStorage.removeItem('jwt');
+            location.reload();
+        };
+
+        document.getElementById('subscribeBtn').onclick = () => {
+            fetch(`${backendUrl}/subscribe`, {
+                method: 'POST',
+                headers: {Authorization: `Bearer ${jwtToken}`}
+            }).then(res => res.json()).then(data => {
+                // NowPayments handles redirect
+            });
+        };
+
+        let mediaRecorder; let audioChunks = [];
+        document.getElementById('recordBtn').onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.start(); audioChunks = [];
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            setTimeout(() => { mediaRecorder.stop(); stream.getTracks().forEach(t => t.stop()); }, 5000);
+        };
+
+        document.getElementById('submitBtn').onclick = () => {
+            const text = document.getElementById('textInput').value;
+            const audioFile = document.getElementById('audioUpload').files[0];
+            const history = document.getElementById('history').innerText;
+            const formData = new FormData();
+            formData.append('text', text); formData.append('history', history);
+            if (audioFile) formData.append('audio', audioFile);
+            fetch(`${backendUrl}/process`, {
+                method: 'POST',
+                headers: {Authorization: `Bearer ${jwtToken}`},
+                body: formData
+            }).then(res => res.json()).then(data => {
+                document.getElementById('videoPlayer').src = `${backendUrl}/videos/${data.video.split('/').pop()}`;
+                document.getElementById('ttsPlayer').src = `${backendUrl}/download/tts/${Date.now()}`;  // Cache bust
+                document.getElementById('feedback').innerText = data.feedback + " | Suggestion: " + data.suggestion;
+                document.getElementById('history').innerText += `\nUser: ${text}\nAI: ${data.feedback}`;
+                loadVideos();
+            });
+        };
+
+        if (jwtToken) {
+            fetch(`${backendUrl}/user`, {headers: {Authorization: `Bearer ${jwtToken}`}})  // Assume /user endpoint
+                .then(res => res.json())
+                .then(user => showDashboard(user));
+        }
+    </script>
+</body>
+      </html>
